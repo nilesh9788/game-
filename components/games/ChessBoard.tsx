@@ -98,8 +98,22 @@ const isLightSquare = (index: number): boolean => {
   return (row + col) % 2 === 0;
 };
 
-// AI move selection using simple strategy
-const getAIMove = (board: Board, validMovesMap: Map<number, number[]>): { from: number; to: number } | null => {
+// Piece value evaluation for better AI decisions
+const getPieceValue = (piece: Piece): number => {
+  if (!piece) return 0;
+  switch (piece.type) {
+    case 'queen': return 9;
+    case 'rook': return 5;
+    case 'bishop': return 3;
+    case 'knight': return 3;
+    case 'pawn': return 1;
+    case 'king': return 100;
+    default: return 0;
+  }
+};
+
+// Minimax-inspired AI move selection with depth analysis
+const getAIMove = (board: Board, validMovesMap: Map<number, number[]>, getValidMovesFunc: (index: number, piece: Piece) => number[]): { from: number; to: number } | null => {
   const blackPieces: number[] = [];
   
   // Find all black pieces
@@ -111,29 +125,67 @@ const getAIMove = (board: Board, validMovesMap: Map<number, number[]>): { from: 
 
   if (blackPieces.length === 0) return null;
 
-  // Shuffle and try pieces - prioritize captures
   let bestMove = null;
-  let bestScore = -1;
+  let bestScore = -Infinity;
 
+  // Evaluate each possible move
   blackPieces.forEach(fromIndex => {
     const moves = validMovesMap.get(fromIndex) || [];
+    const piece = board[fromIndex];
     
     moves.forEach(toIndex => {
-      let score = Math.random() * 10; // Base randomness
-      
-      // Prioritize capturing pieces
-      if (board[toIndex]) {
-        const capturedPiece = board[toIndex];
-        if (capturedPiece.type === 'queen') score += 100;
-        else if (capturedPiece.type === 'rook') score += 50;
-        else if (capturedPiece.type === 'bishop' || capturedPiece.type === 'knight') score += 30;
-        else if (capturedPiece.type === 'pawn') score += 10;
+      let score = 0;
+
+      // 1. Check if capturing - high priority
+      const capturedPiece = board[toIndex];
+      if (capturedPiece) {
+        const captureValue = getPieceValue(capturedPiece);
+        const defenseValue = getPieceValue(piece) * 0.5; // Penalize if our piece is at risk
+        score += captureValue * 10 - defenseValue;
       }
-      
-      // Prefer center control
-      const distance = Math.abs(toIndex % 8 - 3.5) + Math.abs(Math.floor(toIndex / 8) - 3.5);
-      score -= distance;
-      
+
+      // 2. Piece development (move pieces out of back rank)
+      const fromRow = Math.floor(fromIndex / 8);
+      const toRow = Math.floor(toIndex / 8);
+      if (piece?.type === 'knight' || piece?.type === 'bishop') {
+        if (fromRow === 7 && toRow < 7) {
+          score += 5; // Encourage piece development
+        }
+      }
+
+      // 3. Pawn promotion opportunity
+      if (piece?.type === 'pawn' && toRow === 0) {
+        score += 50; // Very high score for promotion
+      }
+
+      // 4. Center control (important for middlegame)
+      const toCol = toIndex % 8;
+      const centerDistance = Math.abs(toCol - 3.5) + Math.abs(toRow - 3.5);
+      if (centerDistance < 3) {
+        score += 3;
+      } else if (centerDistance < 4) {
+        score += 1;
+      }
+
+      // 5. King safety - avoid moving king to dangerous squares
+      if (piece?.type === 'king') {
+        const kingSafetyScore = evaluateKingSafety(board, toIndex);
+        score += kingSafetyScore;
+      }
+
+      // 6. Control of important squares
+      if (fromIndex % 8 === 3 || fromIndex % 8 === 4) {
+        score += 2; // Bonus for moving from/to center files
+      }
+
+      // 7. Attack weak pawns
+      if (capturedPiece?.type === 'pawn' && board.filter(p => p?.color === 'white' && p.type === 'pawn').length < 4) {
+        score += 8; // Bonus if white has few pawns
+      }
+
+      // 8. Small randomness to avoid predictability
+      score += Math.random() * 2;
+
       if (score > bestScore) {
         bestScore = score;
         bestMove = { from: fromIndex, to: toIndex };
@@ -142,6 +194,35 @@ const getAIMove = (board: Board, validMovesMap: Map<number, number[]>): { from: 
   });
 
   return bestMove;
+};
+
+// Helper function to evaluate king safety
+const evaluateKingSafety = (board: Board, kingPosition: number): number => {
+  let safety = 0;
+  const row = Math.floor(kingPosition / 8);
+  const col = kingPosition % 8;
+
+  // Avoid edges (more vulnerable)
+  if (col === 0 || col === 7) safety -= 3;
+  if (row === 0 || row === 7) safety -= 2;
+
+  // Check for nearby defending pieces
+  const adjacentSquares = [
+    kingPosition - 9, kingPosition - 8, kingPosition - 7,
+    kingPosition - 1, kingPosition + 1,
+    kingPosition + 7, kingPosition + 8, kingPosition + 9
+  ];
+
+  adjacentSquares.forEach(pos => {
+    if (pos >= 0 && pos < 64) {
+      const piece = board[pos];
+      if (piece && piece.color === 'black') {
+        safety += 2; // Bonus for defending pieces nearby
+      }
+    }
+  });
+
+  return safety;
 };
 
 export default function ChessBoard({ selectedSquare, onSquareSelect, onGameEnd, gameType = 'pvp' }: ChessBoardProps) {
@@ -186,7 +267,7 @@ export default function ChessBoard({ selectedSquare, onSquareSelect, onGameEnd, 
     return () => clearInterval(interval);
   }, [isWhiteTurn, gameOver, onGameEnd]);
 
-  // AI move effect - Computer plays automatically
+  // AI move effect - Computer plays automatically with improved algorithm
   useEffect(() => {
     if (gameOver || gameType !== 'ai' || isWhiteTurn) return;
 
@@ -199,7 +280,7 @@ export default function ChessBoard({ selectedSquare, onSquareSelect, onGameEnd, 
         }
       });
 
-      const aiMove = getAIMove(board, validMovesMap);
+      const aiMove = getAIMove(board, validMovesMap, getValidMoves);
       if (aiMove) {
         const capturedPiece = board[aiMove.to];
         const newBoard = board.map((p, i) => 
