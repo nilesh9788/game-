@@ -54,9 +54,9 @@ export default function Home() {
     },
     {
       id: 'math',
-      title: 'Math Challenge',
-      description: 'Answer math questions quickly and earn points',
-      icon: '🧮',
+      title: 'Puzzle Game',
+      description: 'Solve logic puzzles and test your brain power',
+      icon: 'P',
       color: 'from-red-500 to-pink-600',
       featured: false,
       soon: false,
@@ -108,7 +108,7 @@ export default function Home() {
                 <div className="bg-neutral-950 rounded-xl p-8 md:p-12">
                   <div className="grid md:grid-cols-2 gap-8 items-center">
                     <div>
-                      <div className="text-6xl mb-4">🎲</div>
+                      <div className="text-6xl mb-4 font-bold">RBX</div>
                       <h2 className="text-4xl md:text-5xl font-bold mb-4">Rubik's Cube Solver</h2>
                       <p className="text-neutral-300 text-lg mb-6">
                         Input all six faces of your Rubik's Cube with colors, and our intelligent solver will provide step-by-step animated solutions to solve it. Watch as each move is visualized in 3D!
@@ -120,8 +120,8 @@ export default function Home() {
                       </div>
                     </div>
                     <div className="flex items-center justify-center">
-                      <div className="w-40 h-40 bg-gradient-to-br from-cyan-400 to-blue-600 rounded-2xl rotate-12 group-hover:rotate-6 transition-transform duration-300 flex items-center justify-center text-8xl">
-                        🎲
+                      <div className="w-40 h-40 bg-gradient-to-br from-cyan-400 to-blue-600 rounded-2xl rotate-12 group-hover:rotate-6 transition-transform duration-300 flex items-center justify-center text-6xl font-bold text-white">
+                        RBX
                       </div>
                     </div>
                   </div>

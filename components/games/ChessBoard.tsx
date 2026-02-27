@@ -76,7 +76,19 @@ const getPieceIcon = (piece: Piece): string => {
 
 const getPieceColor = (piece: Piece): string => {
   if (!piece) return '';
-  return piece.color === 'white' ? 'text-white drop-shadow-lg' : 'text-white drop-shadow-lg';
+  // White pieces: black text with white outline for visibility on light squares
+  // Black pieces: white text with black outline for visibility on dark squares
+  return piece.color === 'white' 
+    ? 'text-black' 
+    : 'text-white';
+};
+
+const getPieceStyle = (piece: Piece): string => {
+  if (!piece) return '';
+  // Add text shadow for better contrast
+  return piece.color === 'white'
+    ? 'drop-shadow-[0_0_2px_rgba(255,255,255,0.8)]'
+    : 'drop-shadow-[0_0_2px_rgba(0,0,0,0.8)]';
 };
 
 const isLightSquare = (index: number): boolean => {
@@ -335,7 +347,7 @@ export default function ChessBoard({ selectedSquare, onSquareSelect, onGameEnd }
                     : ''
                 } ${gameOver ? 'cursor-not-allowed opacity-75' : 'cursor-pointer'}`}
               >
-                <span className={getPieceColor(piece)}>
+                <span className={`${getPieceColor(piece)} ${getPieceStyle(piece)}`}>
                   {getPieceIcon(piece)}
                 </span>
               </button>
@@ -357,7 +369,7 @@ export default function ChessBoard({ selectedSquare, onSquareSelect, onGameEnd }
               <span className="text-xs text-neutral-500">None</span>
             ) : (
               capturedWhite.map((piece, idx) => (
-                <span key={idx} className="text-2xl font-bold bg-neutral-800 px-2 py-1 rounded text-white drop-shadow-lg">
+                <span key={idx} className={`text-2xl font-bold bg-neutral-800 px-2 py-1 rounded ${getPieceColor(piece)} ${getPieceStyle(piece)}`}>
                   {getPieceIcon(piece)}
                 </span>
               ))
@@ -371,7 +383,7 @@ export default function ChessBoard({ selectedSquare, onSquareSelect, onGameEnd }
               <span className="text-xs text-neutral-500">None</span>
             ) : (
               capturedBlack.map((piece, idx) => (
-                <span key={idx} className="text-2xl font-bold bg-neutral-800 px-2 py-1 rounded text-white drop-shadow-lg">
+                <span key={idx} className={`text-2xl font-bold bg-neutral-800 px-2 py-1 rounded ${getPieceColor(piece)} ${getPieceStyle(piece)}`}>
                   {getPieceIcon(piece)}
                 </span>
               ))

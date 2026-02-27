@@ -6,18 +6,24 @@ import ChessBoard from '@/components/games/ChessBoard';
 export default function ChessPage() {
   const [selectedSquare, setSelectedSquare] = useState<number | null>(null);
   const [gameHistory, setGameHistory] = useState<string[]>([]);
-  const [gameMode, setGameMode] = useState<'setup' | 'playing' | 'finished'>('setup');
+  const [gameMode, setGameMode] = useState<'setup' | 'mode-select' | 'playing' | 'finished'>('setup');
   const [player1Name, setPlayer1Name] = useState('Player 1 (White)');
   const [player2Name, setPlayer2Name] = useState('Player 2 (Black)');
   const [gameWinner, setGameWinner] = useState<string | null>(null);
+  const [gameType, setGameType] = useState<'pvp' | 'ai' | null>(null);
 
-  const handleStartGame = () => {
-    if (player1Name && player2Name) {
+  const handleModeSelect = (type: 'pvp' | 'ai') => {
+    setGameType(type);
+    if (type === 'pvp') {
       setGameMode('playing');
-      setGameHistory([]);
-      setSelectedSquare(null);
-      setGameWinner(null);
+      setPlayer2Name('Player 2 (Black)');
+    } else {
+      setGameMode('playing');
+      setPlayer2Name('Computer (Black)');
     }
+    setGameHistory([]);
+    setSelectedSquare(null);
+    setGameWinner(null);
   };
 
   const handleGameEnd = (result: 'white' | 'black' | 'draw') => {
@@ -50,10 +56,37 @@ export default function ChessPage() {
 
         {gameMode === 'setup' ? (
           <div className="card-game space-y-6 max-w-md mx-auto">
+            <h2 className="text-2xl font-bold">Game Mode</h2>
+            <p className="text-neutral-400">Choose how you want to play</p>
+
+            <div className="space-y-3">
+              <button
+                onClick={() => {
+                  setGameMode('mode-select');
+                  setGameType('pvp');
+                }}
+                className="w-full px-6 py-4 rounded-lg font-bold bg-blue-600 hover:bg-blue-700 text-white transition-all duration-300 hover:scale-105 active:scale-95"
+              >
+                Player vs Player
+              </button>
+
+              <button
+                onClick={() => {
+                  setGameMode('mode-select');
+                  setGameType('ai');
+                }}
+                className="w-full px-6 py-4 rounded-lg font-bold bg-purple-600 hover:bg-purple-700 text-white transition-all duration-300 hover:scale-105 active:scale-95"
+              >
+                Play vs Computer
+              </button>
+            </div>
+          </div>
+        ) : gameMode === 'mode-select' ? (
+          <div className="card-game space-y-6 max-w-md mx-auto">
             <h2 className="text-2xl font-bold">Game Setup</h2>
 
             <div>
-              <label className="block text-sm text-neutral-400 mb-2">Player 1 (White)</label>
+              <label className="block text-sm text-neutral-400 mb-2">Your Name (White)</label>
               <input
                 type="text"
                 value={player1Name}
@@ -62,22 +95,32 @@ export default function ChessPage() {
               />
             </div>
 
-            <div>
-              <label className="block text-sm text-neutral-400 mb-2">Player 2 (Black)</label>
-              <input
-                type="text"
-                value={player2Name}
-                onChange={(e) => setPlayer2Name(e.target.value)}
-                className="w-full px-4 py-2 bg-neutral-800 border border-neutral-700 rounded-lg text-neutral-50 focus:outline-none focus:border-blue-500"
-              />
-            </div>
+            {gameType === 'pvp' && (
+              <div>
+                <label className="block text-sm text-neutral-400 mb-2">Player 2 (Black)</label>
+                <input
+                  type="text"
+                  value={player2Name}
+                  onChange={(e) => setPlayer2Name(e.target.value)}
+                  className="w-full px-4 py-2 bg-neutral-800 border border-neutral-700 rounded-lg text-neutral-50 focus:outline-none focus:border-blue-500"
+                />
+              </div>
+            )}
 
-            <button
-              onClick={handleStartGame}
-              className="w-full px-6 py-3 rounded-lg font-bold bg-blue-600 hover:bg-blue-700 text-white transition-all duration-300 hover:scale-105 active:scale-95"
-            >
-              Start Game
-            </button>
+            <div className="space-y-2">
+              <button
+                onClick={() => handleModeSelect(gameType!)}
+                className="w-full px-6 py-3 rounded-lg font-bold bg-green-600 hover:bg-green-700 text-white transition-all duration-300 hover:scale-105 active:scale-95"
+              >
+                Start Game
+              </button>
+              <button
+                onClick={() => setGameMode('setup')}
+                className="w-full px-6 py-3 rounded-lg font-bold bg-neutral-700 hover:bg-neutral-600 text-white transition-all"
+              >
+                Back
+              </button>
+            </div>
           </div>
         ) : (
           <>
@@ -145,12 +188,19 @@ export default function ChessPage() {
                   )}
                 </div>
 
-                <button
-                  onClick={() => setGameMode('setup')}
-                  className="w-full px-6 py-3 rounded-lg font-bold bg-blue-600 hover:bg-blue-700 text-white transition-all duration-300 hover:scale-105 active:scale-95"
-                >
-                  New Game
-                </button>
+                <div className="space-y-2">
+                  <button
+                    onClick={() => setGameMode('setup')}
+                    className="w-full px-6 py-3 rounded-lg font-bold bg-blue-600 hover:bg-blue-700 text-white transition-all duration-300 hover:scale-105 active:scale-95"
+                  >
+                    New Game
+                  </button>
+                  <a href="/" className="block">
+                    <button className="w-full px-6 py-3 rounded-lg font-bold bg-neutral-700 hover:bg-neutral-600 text-white transition-all">
+                      Back to Home
+                    </button>
+                  </a>
+                </div>
               </div>
             </div>
             </div>
