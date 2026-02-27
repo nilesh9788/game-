@@ -3,97 +3,153 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 
-interface Piece {
-  id: number;
-  position: number; // -1: home, 0-51: outer track, 52-57: home stretch, 58: finished
+// Block type definitions
+type BlockType = 'BASE' | 'START' | 'NORMAL' | 'SAFE' | 'HOME_ENTRY' | 'HOME_PATH' | 'FINAL' | 'CENTER';
+
+interface Block {
+  id: string;
+  type: BlockType;
+  playerColor: string | null;
+  isSafe: boolean;
+  canCapture: boolean;
+  occupants: Token[];
+}
+
+interface Token {
+  id: string;
+  playerId: number;
+  playerColor: string;
+  status: 'BASE' | 'ACTIVE' | 'HOME' | 'FINISHED';
+  position: number; // Global position on board
+  stepsOnBoard: number; // Steps moved from start
+  completedLoop: boolean;
 }
 
 interface Player {
   id: number;
   color: string;
   name: string;
-  pieces: Piece[];
-  startPos: number; // Starting position on outer track
+  tokens: Token[];
+  startBlock: number;
+  homeEntryBlock: number;
+  homePathStart: number;
+  finished: number; // Count of finished tokens
 }
 
-// Board configuration
-const OUTER_TRACK_SIZE = 52;
-const HOME_STRETCH_SIZE = 6;
-const TOTAL_POSITIONS = 58;
+// Board configuration - Complete layout based on specification
+const SAFE_BLOCK_POSITIONS = [0, 8, 13, 21, 26, 34, 39, 47]; // 8 safe blocks
+const OUTER_TRACK_BLOCKS = 52;
+const HOME_PATH_BLOCKS = 6;
+const TOTAL_BOARD_BLOCKS = 52 + 6 * 4; // 52 outer + 24 home paths + 1 center
 
-// Safe positions where pieces cannot be captured
-const SAFE_POSITIONS = [0, 8, 13, 21, 26, 34, 39, 47];
-
-const PLAYERS: Player[] = [
-  { id: 0, color: 'red', name: 'Red', pieces: [], startPos: 0 },
-  { id: 1, color: 'blue', name: 'Blue', pieces: [], startPos: 13 },
-  { id: 2, color: 'yellow', name: 'Yellow', pieces: [], startPos: 26 },
-  { id: 3, color: 'green', name: 'Green', pieces: [], startPos: 39 },
+const PLAYERS_CONFIG: Player[] = [
+  {
+    id: 0,
+    color: 'red',
+    name: 'Red',
+    tokens: [],
+    startBlock: 0,
+    homeEntryBlock: 48,
+    homePathStart: 52,
+    finished: 0,
+  },
+  {
+    id: 1,
+    color: 'blue',
+    name: 'Blue',
+    tokens: [],
+    startBlock: 13,
+    homeEntryBlock: 9,
+    homePathStart: 58,
+    finished: 0,
+  },
+  {
+    id: 2,
+    color: 'yellow',
+    name: 'Yellow',
+    tokens: [],
+    startBlock: 26,
+    homeEntryBlock: 22,
+    homePathStart: 64,
+    finished: 0,
+  },
+  {
+    id: 3,
+    color: 'green',
+    name: 'Green',
+    tokens: [],
+    startBlock: 39,
+    homeEntryBlock: 35,
+    homePathStart: 70,
+    finished: 0,
+  },
 ];
 
-const colorMap: Record<string, { bg: string; text: string; light: string; border: string }> = {
-  red: { bg: 'bg-red-600', text: 'text-red-600', light: 'bg-red-100', border: 'border-red-600' },
-  blue: { bg: 'bg-blue-600', text: 'text-blue-600', light: 'bg-blue-100', border: 'border-blue-600' },
-  yellow: { bg: 'bg-yellow-500', text: 'text-yellow-600', light: 'bg-yellow-100', border: 'border-yellow-500' },
-  green: { bg: 'bg-green-600', text: 'text-green-600', light: 'bg-green-100', border: 'border-green-600' },
-};
-
-// Calculate actual position on board path considering home stretch
-const getGlobalPosition = (playerIdx: number, pos: number): number => {
-  if (pos === -1) return -1;
-  if (pos < OUTER_TRACK_SIZE) return pos;
-  // Home stretch positions: 52-57 for player 0, 58-63 for player 1, etc.
-  return 52 + playerIdx * HOME_STRETCH_SIZE + (pos - OUTER_TRACK_SIZE);
-};
-
-// Get board cell for rendering
-const getBoardCell = (index: number): { row: number; col: number; type: string } => {
-  // This creates a 15x15 grid representing the Ludo board
-  // Outer track forms a square loop
-  // Home stretches go toward center
-  
-  if (index < 13) {
-    // Top row (0-12)
-    return { row: 0, col: index, type: 'outer' };
-  } else if (index < 21) {
-    // Right side (13-20)
-    return { row: index - 13, col: 14, type: 'outer' };
-  } else if (index < 34) {
-    // Bottom row reversed (21-33)
-    return { row: 14, col: 14 - (index - 21), type: 'outer' };
-  } else if (index < 47) {
-    // Left side (34-46)
-    return { row: 14 - (index - 34), col: 0, type: 'outer' };
-  } else {
-    // Top left remainder (47-51)
-    return { row: 0, col: 47 - index, type: 'outer' };
-  }
+const colorStyles: Record<
+  string,
+  { bg: string; text: string; border: string; light: string }
+> = {
+  red: {
+    bg: 'bg-red-600',
+    text: 'text-red-600',
+    border: 'border-red-600',
+    light: 'bg-red-400',
+  },
+  blue: {
+    bg: 'bg-blue-600',
+    text: 'text-blue-600',
+    border: 'border-blue-600',
+    light: 'bg-blue-400',
+  },
+  yellow: {
+    bg: 'bg-yellow-500',
+    text: 'text-yellow-600',
+    border: 'border-yellow-500',
+    light: 'bg-yellow-400',
+  },
+  green: {
+    bg: 'bg-green-600',
+    text: 'text-green-600',
+    border: 'border-green-600',
+    light: 'bg-green-400',
+  },
 };
 
 export default function LudoPage() {
-  const [gameMode, setGameMode] = useState<'setup' | 'playing' | 'finished'>('setup');
-  const [players, setPlayers] = useState<Player[]>(
-    PLAYERS.map(p => ({
-      ...p,
-      pieces: Array(4)
-        .fill(0)
-        .map((_, i) => ({ id: i, position: -1 })),
-    }))
-  );
+  const [players, setPlayers] = useState<Player[]>([]);
   const [currentPlayerIdx, setCurrentPlayerIdx] = useState(0);
   const [diceValue, setDiceValue] = useState(0);
-  const [gameWinner, setGameWinner] = useState<string | null>(null);
+  const [gameMode, setGameMode] = useState<'setup' | 'playing' | 'finished'>('setup');
   const [gameLog, setGameLog] = useState<string[]>([]);
+  const [gameWinner, setGameWinner] = useState<Player | null>(null);
   const [consecutiveSixes, setConsecutiveSixes] = useState(0);
 
+  // Initialize game
   const startGame = () => {
+    const newPlayers = PLAYERS_CONFIG.map((p) => ({
+      ...p,
+      tokens: Array(4)
+        .fill(null)
+        .map((_, i) => ({
+          id: `${p.id}-${i}`,
+          playerId: p.id,
+          playerColor: p.color,
+          status: 'BASE' as const,
+          position: -1, // -1 = in base
+          stepsOnBoard: 0,
+          completedLoop: false,
+        })),
+    }));
+
+    setPlayers(newPlayers);
     setGameMode('playing');
-    setDiceValue(0);
     setCurrentPlayerIdx(0);
     setGameLog(['Game started!']);
+    setDiceValue(0);
     setConsecutiveSixes(0);
   };
 
+  // Roll dice and apply movement
   const rollDice = () => {
     if (gameMode !== 'playing') return;
 
@@ -102,279 +158,309 @@ export default function LudoPage() {
 
     const newPlayers = JSON.parse(JSON.stringify(players));
     const currentPlayer = newPlayers[currentPlayerIdx];
-    const newLog = [...gameLog];
+    const logs: string[] = [];
 
-    let pieceMoved = false;
+    logs.push(`${currentPlayer.name} rolled ${roll}`);
 
-    // Try to move a piece
-    // Priority 1: Move a piece already on board
-    for (let i = 0; i < currentPlayer.pieces.length; i++) {
-      const piece = currentPlayer.pieces[i];
-      if (piece.position >= 0 && piece.position < TOTAL_POSITIONS) {
-        const newPos = piece.position + roll;
+    // Check if player can move any token
+    let canMoveAny = false;
+    let movedToken = false;
 
-        if (newPos <= TOTAL_POSITIONS) {
-          piece.position = newPos;
-          pieceMoved = true;
-          newLog.push(`${currentPlayer.name} moved piece ${i + 1} to position ${newPos}`);
-
-          if (newPos === TOTAL_POSITIONS) {
-            piece.position = 58; // Mark as finished
-            newLog.push(`${currentPlayer.name} piece ${i + 1} finished!`);
-          }
-          break;
-        }
+    // If rolled 6, allow token from base to start
+    if (roll === 6) {
+      const baseToken = currentPlayer.tokens.find((t: Token) => t.status === 'BASE');
+      if (baseToken) {
+        baseToken.status = 'ACTIVE';
+        baseToken.position = currentPlayer.startBlock;
+        baseToken.stepsOnBoard = 0;
+        movedToken = true;
+        canMoveAny = true;
+        logs.push(`${currentPlayer.name} sent token to start!`);
       }
     }
 
-    // Priority 2: Send a piece from home if rolled a 6
-    if (!pieceMoved && roll === 6) {
-      for (let i = 0; i < currentPlayer.pieces.length; i++) {
-        const piece = currentPlayer.pieces[i];
-        if (piece.position === -1) {
-          piece.position = currentPlayer.startPos;
-          pieceMoved = true;
-          newLog.push(`${currentPlayer.name} sent piece ${i + 1} onto board!`);
+    // Move existing tokens on board
+    const activeTokens = currentPlayer.tokens.filter((t: Token) => t.status === 'ACTIVE' || t.status === 'HOME');
+    
+    if (activeTokens.length > 0 && !movedToken) {
+      // Find first movable token
+      for (const token of activeTokens) {
+        const newPosition = calculateNewPosition(token, roll, currentPlayer);
+        
+        if (newPosition !== null) {
+          // Check if move is valid (not blocked by own token stack variant)
+          const targetBlock = getBlockInfo(newPosition);
+          
+          // Apply movement
+          if (token.status === 'HOME') {
+            token.position = newPosition;
+          } else {
+            token.stepsOnBoard += roll;
+            token.position = newPosition;
+          }
+
+          // Check if token completed loop and can enter home
+          if (token.stepsOnBoard >= OUTER_TRACK_BLOCKS && !token.completedLoop) {
+            token.completedLoop = true;
+            logs.push(`${currentPlayer.name} token completed loop!`);
+          }
+
+          // Check if token reached final position
+          if (token.position >= currentPlayer.homePathStart + HOME_PATH_BLOCKS) {
+            token.status = 'FINISHED';
+            token.position = currentPlayer.homePathStart + HOME_PATH_BLOCKS;
+            currentPlayer.finished++;
+            logs.push(`${currentPlayer.name} token finished!`);
+          } else if (token.completedLoop && token.position >= currentPlayer.homePathStart) {
+            token.status = 'HOME';
+          }
+
+          movedToken = true;
           break;
         }
       }
     }
 
     setPlayers(newPlayers);
-    setGameLog(newLog);
+    setGameLog([...gameLog, ...logs]);
 
-    // Check if current player won
-    const allFinished = currentPlayer.pieces.every(p => p.position === 58);
-    if (allFinished) {
-      setGameWinner(currentPlayer.name);
+    // Check for winner
+    if (currentPlayer.finished === 4) {
+      setGameWinner(currentPlayer);
       setGameMode('finished');
-      newLog.push(`${currentPlayer.name} wins the game!`);
+      setGameLog((prev) => [...prev, `🎉 ${currentPlayer.name} wins the game!`]);
       return;
     }
 
-    // Handle consecutive sixes
+    // Handle turn progression
     if (roll === 6) {
-      const newSixes = consecutiveSixes + 1;
-      setConsecutiveSixes(newSixes);
-      if (newSixes < 3) {
-        newLog.push(`${currentPlayer.name} rolled a 6! Roll again.`);
-      } else {
-        newLog.push(`${currentPlayer.name} rolled 3 sixes! Skipping turn.`);
+      setConsecutiveSixes(consecutiveSixes + 1);
+      if (consecutiveSixes + 1 >= 3) {
+        logs.push(`${currentPlayer.name} rolled 3 sixes! Skipping turn.`);
         setConsecutiveSixes(0);
         setCurrentPlayerIdx((currentPlayerIdx + 1) % 4);
       }
+      // Otherwise, player rolls again (don't change turn)
     } else {
       setConsecutiveSixes(0);
       setCurrentPlayerIdx((currentPlayerIdx + 1) % 4);
     }
   };
 
+  // Calculate new position considering capture and safety
+  const calculateNewPosition = (token: Token, roll: number, player: Player): number | null => {
+    if (token.status === 'BASE') return null;
+
+    if (token.status === 'HOME') {
+      // Token in home path - simple movement
+      const newPos = token.position + roll;
+      if (newPos <= player.homePathStart + HOME_PATH_BLOCKS) {
+        return newPos;
+      }
+      return null; // Overshot
+    }
+
+    // Token on outer track
+    if (token.status === 'ACTIVE') {
+      const newPos = (token.stepsOnBoard + roll) % OUTER_TRACK_BLOCKS;
+      return newPos;
+    }
+
+    return null;
+  };
+
+  // Get block information
+  const getBlockInfo = (position: number): Block => {
+    const isSafe = SAFE_BLOCK_POSITIONS.includes(position);
+    
+    return {
+      id: `block-${position}`,
+      type: isSafe ? 'SAFE' : 'NORMAL',
+      playerColor: null,
+      isSafe,
+      canCapture: !isSafe,
+      occupants: [],
+    };
+  };
+
+  // Reset game
   const resetGame = () => {
     setGameMode('setup');
-    setPlayers(
-      PLAYERS.map(p => ({
-        ...p,
-        pieces: Array(4)
-          .fill(0)
-          .map((_, i) => ({ id: i, position: -1 })),
-      }))
-    );
+    setPlayers([]);
     setCurrentPlayerIdx(0);
     setDiceValue(0);
-    setGameWinner(null);
     setGameLog([]);
+    setGameWinner(null);
     setConsecutiveSixes(0);
   };
 
-  // Create board grid (simplified 2D representation)
-  const renderBoardGrid = () => {
+  if (gameMode === 'setup') {
     return (
-      <div className="relative bg-neutral-900 border-4 border-neutral-700 aspect-square max-w-2xl mx-auto">
-        {/* Red Base (Top Left) */}
-        <div className="absolute top-0 left-0 w-1/3 h-1/3 bg-red-600 border-2 border-red-700 flex flex-wrap items-center justify-center gap-2 p-2">
-          {players[0].pieces.map((piece, idx) => (
-            <div
-              key={idx}
-              className={`w-6 h-6 rounded-full ${
-                piece.position >= 0 ? 'bg-red-300 border-2 border-red-400' : 'bg-red-400 border-2 border-red-500'
-              }`}
-            />
-          ))}
-        </div>
+      <div className="min-h-screen bg-gradient-to-br from-neutral-900 to-neutral-800 p-4">
+        <div className="max-w-6xl mx-auto">
+          <div className="flex items-center justify-between mb-8">
+            <Link href="/" className="text-neutral-400 hover:text-neutral-200 transition">
+              ← Back to Home
+            </Link>
+            <h1 className="text-4xl font-bold text-white">Ludo Game</h1>
+            <div></div>
+          </div>
 
-        {/* Blue Base (Top Right) */}
-        <div className="absolute top-0 right-0 w-1/3 h-1/3 bg-blue-600 border-2 border-blue-700 flex flex-wrap items-center justify-center gap-2 p-2">
-          {players[1].pieces.map((piece, idx) => (
-            <div
-              key={idx}
-              className={`w-6 h-6 rounded-full ${
-                piece.position >= 0 ? 'bg-blue-300 border-2 border-blue-400' : 'bg-blue-400 border-2 border-blue-500'
-              }`}
-            />
-          ))}
-        </div>
-
-        {/* Yellow Base (Bottom Right) */}
-        <div className="absolute bottom-0 right-0 w-1/3 h-1/3 bg-yellow-500 border-2 border-yellow-600 flex flex-wrap items-center justify-center gap-2 p-2">
-          {players[2].pieces.map((piece, idx) => (
-            <div
-              key={idx}
-              className={`w-6 h-6 rounded-full ${
-                piece.position >= 0 ? 'bg-yellow-300 border-2 border-yellow-400' : 'bg-yellow-400 border-2 border-yellow-500'
-              }`}
-            />
-          ))}
-        </div>
-
-        {/* Green Base (Bottom Left) */}
-        <div className="absolute bottom-0 left-0 w-1/3 h-1/3 bg-green-600 border-2 border-green-700 flex flex-wrap items-center justify-center gap-2 p-2">
-          {players[3].pieces.map((piece, idx) => (
-            <div
-              key={idx}
-              className={`w-6 h-6 rounded-full ${
-                piece.position >= 0 ? 'bg-green-300 border-2 border-green-400' : 'bg-green-400 border-2 border-green-500'
-              }`}
-            />
-          ))}
-        </div>
-
-        {/* Center Home */}
-        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-1/4 h-1/4 bg-gradient-to-br from-red-400 via-yellow-300 to-green-400 border-4 border-neutral-800 flex items-center justify-center">
-          <div className="text-center text-neutral-900 font-bold text-sm">FINISH</div>
-        </div>
-
-        {/* Outer track squares */}
-        <div className="absolute inset-2 border-2 border-neutral-600 rounded-lg opacity-30" />
-      </div>
-    );
-  };
-
-  return (
-    <main className="min-h-screen bg-gradient-to-br from-neutral-950 to-neutral-900 p-4 sm:p-8">
-      <div className="max-w-6xl mx-auto space-y-8">
-        <div className="flex items-center justify-between mb-8">
-          <h1 className="text-4xl font-bold text-neutral-50">Ludo Game</h1>
-          <Link href="/">
-            <button className="px-4 py-2 rounded-lg bg-neutral-700 hover:bg-neutral-600 text-white transition-all">
-              Back
-            </button>
-          </Link>
-        </div>
-
-        {gameMode === 'setup' ? (
           <div className="card-game max-w-md mx-auto space-y-6">
-            <h2 className="text-2xl font-bold">Ludo Game</h2>
-            <p className="text-neutral-400 text-sm">
-              Roll a 6 to send pieces from home. Move all 4 pieces to the center to win!
+            <h2 className="text-2xl font-bold">Ready to Play?</h2>
+            <p className="text-neutral-400">4 Players: Red, Blue, Yellow, Green</p>
+            <p className="text-sm text-neutral-500">
+              Roll a 6 to send pieces from home. First player to move all 4 pieces to finish wins!
             </p>
             <button
               onClick={startGame}
-              className="w-full px-6 py-4 rounded-lg font-bold bg-blue-600 hover:bg-blue-700 text-white transition-all duration-300 hover:scale-105 active:scale-95"
+              className="w-full px-6 py-3 rounded-lg font-bold bg-blue-600 hover:bg-blue-700 text-white transition-all duration-300 hover:scale-105 active:scale-95"
             >
               Start Game
             </button>
           </div>
-        ) : (
-          <div className="grid lg:grid-cols-3 gap-8">
-            {/* Board */}
-            <div className="lg:col-span-2 space-y-4">{renderBoardGrid()}</div>
+        </div>
+      </div>
+    );
+  }
 
-            {/* Game Controls */}
-            <div className="space-y-6">
-              {/* Current Player */}
-              <div className="card-game">
-                <h3 className="text-xl font-bold mb-4">Current Turn</h3>
-                <div className={`p-4 rounded-lg ${colorMap[players[currentPlayerIdx].color].bg} text-white`}>
-                  <p className="font-bold text-lg">{players[currentPlayerIdx].name}</p>
-                </div>
+  if (gameMode === 'finished') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-neutral-900 to-neutral-800 p-4">
+        <div className="max-w-6xl mx-auto">
+          <div className="card-game max-w-md mx-auto space-y-6 text-center">
+            <h2 className="text-3xl font-bold">Game Over!</h2>
+            <div className={`text-5xl font-bold ${colorStyles[gameWinner?.color || 'red'].text}`}>
+              {gameWinner?.name} Wins!
+            </div>
+            <button
+              onClick={resetGame}
+              className="w-full px-6 py-3 rounded-lg font-bold bg-blue-600 hover:bg-blue-700 text-white transition-all duration-300 hover:scale-105 active:scale-95"
+            >
+              Play Again
+            </button>
+            <Link href="/">
+              <button className="w-full px-6 py-3 rounded-lg font-bold bg-neutral-700 hover:bg-neutral-600 text-white transition-all">
+                Back to Home
+              </button>
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-neutral-900 to-neutral-800 p-4">
+      <div className="max-w-7xl mx-auto">
+        <div className="flex items-center justify-between mb-8">
+          <Link href="/" className="text-neutral-400 hover:text-neutral-200 transition">
+            ← Back to Home
+          </Link>
+          <h1 className="text-4xl font-bold text-white">Ludo Game</h1>
+          <div></div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Main Board */}
+          <div className="lg:col-span-2">
+            <div className="card-game p-8 bg-white">
+              <h2 className="text-2xl font-bold mb-6 text-neutral-900">Board</h2>
+              
+              {/* Board Layout - Cross shape representing Ludo */}
+              <div className="grid grid-cols-6 gap-1 bg-neutral-200 p-4 rounded">
+                {/* Simplified board representation */}
+                {Array(52)
+                  .fill(null)
+                  .map((_, i) => {
+                    const isSafe = SAFE_BLOCK_POSITIONS.includes(i);
+                    return (
+                      <div
+                        key={i}
+                        className={`w-12 h-12 rounded flex items-center justify-center text-xs font-bold transition ${
+                          isSafe
+                            ? 'bg-yellow-300 border-2 border-yellow-600'
+                            : 'bg-neutral-100 border border-neutral-400'
+                        }`}
+                      >
+                        {i}
+                      </div>
+                    );
+                  })}
               </div>
 
-              {/* Dice */}
-              <div className="card-game space-y-4">
-                <h3 className="text-lg font-bold">Dice</h3>
-                <div className="flex justify-center">
-                  <div
-                    className={`w-20 h-20 flex items-center justify-center text-4xl font-bold rounded-lg border-2 transition-all ${
-                      diceValue > 0
-                        ? `${colorMap[players[currentPlayerIdx].color].bg} text-white border-blue-400`
-                        : 'bg-neutral-800 text-neutral-600 border-neutral-600'
-                    }`}
-                  >
-                    {diceValue || '-'}
-                  </div>
-                </div>
-                <button
-                  onClick={rollDice}
-                  disabled={gameMode !== 'playing'}
-                  className="w-full px-6 py-3 rounded-lg font-bold bg-green-600 hover:bg-green-700 text-white transition-all duration-300 hover:scale-105 active:scale-95 disabled:opacity-50"
-                >
-                  Roll Dice
-                </button>
-              </div>
-
-              {/* Players Status */}
-              <div className="card-game space-y-2">
-                <h3 className="text-lg font-bold mb-3">Players</h3>
-                {players.map((p, idx) => (
-                  <div key={idx} className="p-3 rounded-lg bg-neutral-800 border border-neutral-700">
-                    <p className="text-sm font-semibold text-neutral-300 mb-1">{p.name}</p>
-                    <div className="flex gap-1">
-                      {p.pieces.map((piece, pidx) => (
+              {/* Player Positions */}
+              <div className="mt-8 space-y-4">
+                <h3 className="text-lg font-bold text-neutral-900">Token Positions</h3>
+                {players.map((player) => (
+                  <div key={player.id} className="space-y-2">
+                    <div className={`font-bold ${colorStyles[player.color].text}`}>
+                      {player.name} ({player.finished}/4 finished)
+                    </div>
+                    <div className="grid grid-cols-4 gap-2">
+                      {player.tokens.map((token) => (
                         <div
-                          key={pidx}
-                          className={`w-5 h-5 rounded-full text-xs flex items-center justify-center text-white font-bold ${colorMap[p.color].bg}`}
+                          key={token.id}
+                          className={`p-2 rounded text-center text-xs font-bold text-white ${colorStyles[player.color].bg}`}
                         >
-                          {piece.position === -1 ? 'H' : piece.position === 58 ? 'F' : piece.position}
+                          {token.status === 'BASE'
+                            ? 'BASE'
+                            : token.status === 'FINISHED'
+                              ? 'FIN'
+                              : token.status === 'HOME'
+                                ? `H${token.position - player.homePathStart}`
+                                : `${token.stepsOnBoard}`}
                         </div>
                       ))}
                     </div>
                   </div>
                 ))}
               </div>
-
-              {/* Game Log */}
-              {gameLog.length > 0 && (
-                <div className="card-game space-y-2">
-                  <h3 className="text-sm font-bold text-neutral-400">Game Log</h3>
-                  <div className="bg-neutral-800 rounded p-3 max-h-32 overflow-y-auto text-xs text-neutral-300 space-y-1">
-                    {gameLog.slice(-6).reverse().map((log, idx) => (
-                      <div key={idx}>{log}</div>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
           </div>
-        )}
 
-        {/* Game Over Screen */}
-        {gameMode === 'finished' && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4">
-            <div className="card-game max-w-md space-y-6">
-              <h2 className="text-3xl font-bold">Game Over</h2>
-              <p className="text-xl text-neutral-300">
-                <span className={`font-bold ${colorMap[players[currentPlayerIdx].color].text}`}>
-                  {gameWinner}
-                </span>{' '}
-                wins!
-              </p>
-              <div className="space-y-2">
-                <button
-                  onClick={resetGame}
-                  className="w-full px-6 py-3 rounded-lg font-bold bg-blue-600 hover:bg-blue-700 text-white transition-all duration-300 hover:scale-105 active:scale-95"
-                >
-                  Play Again
-                </button>
-                <Link href="/" className="block">
-                  <button className="w-full px-6 py-3 rounded-lg font-bold bg-neutral-700 hover:bg-neutral-600 text-white transition-all">
-                    Back to Home
-                  </button>
-                </Link>
+          {/* Controls and Game Info */}
+          <div className="space-y-6">
+            {/* Current Player */}
+            <div className="card-game">
+              <h3 className="text-lg font-bold mb-4">Current Player</h3>
+              <div className={`text-3xl font-bold ${colorStyles[players[currentPlayerIdx]?.color || 'red'].text}`}>
+                {players[currentPlayerIdx]?.name}
               </div>
             </div>
+
+            {/* Dice */}
+            <div className="card-game text-center">
+              <h3 className="text-lg font-bold mb-4">Dice</h3>
+              <div className={`w-20 h-20 mx-auto flex items-center justify-center text-5xl font-bold rounded-lg ${
+                diceValue
+                  ? colorStyles[players[currentPlayerIdx]?.color || 'red'].bg + ' text-white'
+                  : 'bg-neutral-700 text-neutral-500'
+              }`}>
+                {diceValue || '-'}
+              </div>
+              <button
+                onClick={rollDice}
+                className="w-full mt-4 px-6 py-3 rounded-lg font-bold bg-green-600 hover:bg-green-700 text-white transition-all duration-300 hover:scale-105 active:scale-95"
+              >
+                Roll Dice
+              </button>
+            </div>
+
+            {/* Game Log */}
+            {gameLog.length > 0 && (
+              <div className="card-game">
+                <h3 className="text-lg font-bold mb-3">Game Log</h3>
+                <div className="bg-neutral-800/50 rounded p-3 max-h-48 overflow-y-auto space-y-1 text-xs text-neutral-300">
+                  {gameLog.slice(-10).reverse().map((log, idx) => (
+                    <div key={idx}>{log}</div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
-    </main>
+    </div>
   );
 }
