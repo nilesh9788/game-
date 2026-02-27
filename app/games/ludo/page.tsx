@@ -5,182 +5,253 @@ import Link from 'next/link';
 
 interface Piece {
   id: number;
-  position: number;
-  finished: boolean;
+  position: number; // -1: home, 0-51: board, 52-57: home stretch, 58: finished
+  x: number;
+  y: number;
 }
 
 interface Player {
   color: string;
-  colorCode: string;
-  textColor: string;
   name: string;
   pieces: Piece[];
+  startPos: number; // Starting position on main board
+  homeStretchStart: number; // Where home stretch begins for this player
 }
 
-const BOARD_POSITIONS = 52; // 52 positions on the board
-const HOME_STRETCH = 6; // 6 positions before winning
+// Board positions mapping: 52 positions on main path
+// Player positions: Red=0, Blue=13, Green=26, Yellow=39
+const PLAYERS_CONFIG = [
+  { color: 'red', name: 'Red', startPos: 0, homeStretchStart: 52, bgColor: 'bg-red-600', lightColor: 'bg-red-500', accentColor: 'border-red-400' },
+  { color: 'blue', name: 'Blue', startPos: 13, homeStretchStart: 56, bgColor: 'bg-blue-600', lightColor: 'bg-blue-500', accentColor: 'border-blue-400' },
+  { color: 'green', name: 'Green', startPos: 26, homeStretchStart: 60, bgColor: 'bg-green-600', lightColor: 'bg-green-500', accentColor: 'border-green-400' },
+  { color: 'yellow', name: 'Yellow', startPos: 39, homeStretchStart: 64, bgColor: 'bg-yellow-500', lightColor: 'bg-yellow-400', accentColor: 'border-yellow-400' },
+];
+
+// Safe positions on the board (star positions)
+const SAFE_POSITIONS = [0, 8, 13, 21, 26, 34, 39, 47];
 
 export default function LudoPage() {
   const [gameMode, setGameMode] = useState<'setup' | 'playing' | 'finished'>('setup');
-  const [players, setPlayers] = useState<Player[]>([
-    { color: 'red', colorCode: 'bg-red-600', textColor: 'text-red-600', name: 'Red', pieces: Array(4).fill(0).map((_, i) => ({ id: i, position: -1, finished: false })) },
-    { color: 'blue', colorCode: 'bg-blue-600', textColor: 'text-blue-600', name: 'Blue', pieces: Array(4).fill(0).map((_, i) => ({ id: i, position: -1, finished: false })) },
-    { color: 'green', colorCode: 'bg-green-600', textColor: 'text-green-600', name: 'Green', pieces: Array(4).fill(0).map((_, i) => ({ id: i, position: -1, finished: false })) },
-    { color: 'yellow', colorCode: 'bg-yellow-500', textColor: 'text-yellow-600', name: 'Yellow', pieces: Array(4).fill(0).map((_, i) => ({ id: i, position: -1, finished: false })) },
-  ]);
+  const [players, setPlayers] = useState<Player[]>(
+    PLAYERS_CONFIG.map(config => ({
+      color: config.color,
+      name: config.name,
+      startPos: config.startPos,
+      homeStretchStart: config.homeStretchStart,
+      pieces: Array(4).fill(0).map((_, i) => ({
+        id: i,
+        position: -1,
+        x: 0,
+        y: 0,
+      })),
+    }))
+  );
+  
   const [currentPlayer, setCurrentPlayer] = useState(0);
   const [diceValue, setDiceValue] = useState(0);
   const [gameWinner, setGameWinner] = useState<string | null>(null);
+  const [gameLog, setGameLog] = useState<string[]>([]);
   const [selectedPiece, setSelectedPiece] = useState<{ playerIdx: number; pieceIdx: number } | null>(null);
 
   const startGame = () => {
     setGameMode('playing');
     setDiceValue(0);
     setCurrentPlayer(0);
+    setGameLog(['Game started!']);
+  };
+
+  const canMovePiece = (playerIdx: number, pieceIdx: number, diceValue: number): boolean => {
+    const piece = players[playerIdx].pieces[pieceIdx];
+    
+    // Can't move if piece is finished
+    if (piece.position >= 58) return false;
+    
+    // Can only move from home with 6
+    if (piece.position === -1 && diceValue !== 6) return false;
+    
+    // Can move if on board
+    if (piece.position >= 0 && piece.position < 58) return true;
+    
+    return diceValue === 6;
+  };
+
+  const getNewPosition = (playerIdx: number, pieceIdx: number, diceValue: number): number => {
+    const piece = players[playerIdx].pieces[pieceIdx];
+    
+    // If at home, move to start position when rolling 6
+    if (piece.position === -1) {
+      return PLAYERS_CONFIG[playerIdx].startPos;
+    }
+    
+    // Move on board
+    return piece.position + diceValue;
   };
 
   const rollDice = () => {
-    if (gameMode !== 'playing') return;
-    
+    if (gameMode !== 'playing' || diceValue > 0) return;
+
     const roll = Math.floor(Math.random() * 6) + 1;
     setDiceValue(roll);
+    setSelectedPiece(null);
 
     const newPlayers = JSON.parse(JSON.stringify(players));
     const currentPlayerData = newPlayers[currentPlayer];
+    const newLog = [...gameLog];
 
-    // Check if player can move a piece
-    let canMove = false;
+    // Try to move a piece
+    let moveMade = false;
+    let pieceMoved = -1;
 
-    // Try to move an existing piece on board
+    // Prioritize moving pieces already on the board
     for (let i = 0; i < currentPlayerData.pieces.length; i++) {
       const piece = currentPlayerData.pieces[i];
-      if (!piece.finished && piece.position >= 0) {
+      if (piece.position >= 0 && piece.position < 58) {
         const newPos = piece.position + roll;
-        if (newPos <= BOARD_POSITIONS + HOME_STRETCH) {
+        if (newPos <= 58) {
           piece.position = newPos;
-          if (newPos === BOARD_POSITIONS + HOME_STRETCH) {
-            piece.finished = true;
-          }
-          canMove = true;
+          moveMade = true;
+          pieceMoved = i;
           break;
         }
       }
     }
 
-    // If rolling a 6, send a piece from home
-    if (roll === 6 && !canMove) {
-      for (const piece of currentPlayerData.pieces) {
-        if (piece.position === -1) {
-          piece.position = 0;
-          canMove = true;
+    // If no piece moved and rolled 6, send a piece from home
+    if (!moveMade && roll === 6) {
+      for (let i = 0; i < currentPlayerData.pieces.length; i++) {
+        if (currentPlayerData.pieces[i].position === -1) {
+          currentPlayerData.pieces[i].position = PLAYERS_CONFIG[currentPlayer].startPos;
+          moveMade = true;
+          pieceMoved = i;
+          newLog.push(`Piece ${i + 1} sent to board!`);
           break;
+        }
+      }
+    }
+
+    // If still no move possible, try any available piece
+    if (!moveMade && roll !== 6) {
+      for (let i = 0; i < currentPlayerData.pieces.length; i++) {
+        const piece = currentPlayerData.pieces[i];
+        if (piece.position >= 0 && piece.position < 58) {
+          const newPos = piece.position + roll;
+          if (newPos <= 58) {
+            piece.position = newPos;
+            moveMade = true;
+            pieceMoved = i;
+            break;
+          }
         }
       }
     }
 
     setPlayers(newPlayers);
+    newLog.push(`${PLAYERS_CONFIG[currentPlayer].name} rolled ${roll}`);
+    setGameLog(newLog);
 
-    // Check if player won
-    const allFinished = currentPlayerData.pieces.every(p => p.finished);
+    // Check for winner
+    const allFinished = currentPlayerData.pieces.every((p: Piece) => p.position >= 58);
     if (allFinished) {
-      setGameWinner(currentPlayerData.name);
+      setGameWinner(PLAYERS_CONFIG[currentPlayer].name);
       setGameMode('finished');
+      newLog.push(`${PLAYERS_CONFIG[currentPlayer].name} wins!`);
       return;
     }
 
-    // Move to next player (unless rolled a 6)
-    if (roll !== 6) {
-      setCurrentPlayer((currentPlayer + 1) % 4);
-    }
-    setTimeout(() => setDiceValue(0), 1500);
+    // Next turn logic: get another roll if 6, otherwise next player
+    setTimeout(() => {
+      if (roll === 6) {
+        setDiceValue(0);
+        // Same player rolls again
+      } else {
+        setDiceValue(0);
+        setCurrentPlayer((currentPlayer + 1) % 4);
+      }
+    }, 500);
   };
 
   const resetGame = () => {
     setGameMode('setup');
-    setPlayers(players.map(p => ({
-      ...p,
-      pieces: Array(4).fill(0).map((_, i) => ({ id: i, position: -1, finished: false }))
-    })));
+    setPlayers(
+      PLAYERS_CONFIG.map(config => ({
+        color: config.color,
+        name: config.name,
+        startPos: config.startPos,
+        homeStretchStart: config.homeStretchStart,
+        pieces: Array(4).fill(0).map((_, i) => ({
+          id: i,
+          position: -1,
+          x: 0,
+          y: 0,
+        })),
+      }))
+    );
     setCurrentPlayer(0);
     setDiceValue(0);
     setGameWinner(null);
-    setSelectedPiece(null);
+    setGameLog([]);
   };
 
-  const getBoardPosition = (boardIndex: number): { x: number; y: number } => {
-    // Create a square board path
-    const boardSize = 52;
-    const sideSize = 13; // 13 squares per side
+  const renderBoardSquare = (position: number) => {
+    const piecesAtPosition: JSX.Element[] = [];
     
-    if (boardIndex < sideSize) {
-      // Top side (left to right)
-      return { x: boardIndex * 30, y: 0 };
-    } else if (boardIndex < sideSize * 2) {
-      // Right side (top to bottom)
-      return { x: (sideSize - 1) * 30, y: (boardIndex - sideSize) * 30 };
-    } else if (boardIndex < sideSize * 3) {
-      // Bottom side (right to left)
-      return { x: (sideSize - 1 - (boardIndex - sideSize * 2)) * 30, y: (sideSize - 1) * 30 };
-    } else {
-      // Left side (bottom to top)
-      return { x: 0, y: (sideSize - 1 - (boardIndex - sideSize * 3)) * 30 };
-    }
-  };
+    players.forEach((player, playerIdx) => {
+      player.pieces.forEach((piece, pieceIdx) => {
+        if (piece.position === position) {
+          const config = PLAYERS_CONFIG[playerIdx];
+          piecesAtPosition.push(
+            <div
+              key={`${playerIdx}-${pieceIdx}`}
+              className={`w-5 h-5 rounded-full ${config.bgColor} border-2 border-white cursor-pointer hover:ring-2 hover:ring-yellow-300`}
+              onClick={() => {
+                if (gameMode === 'playing' && diceValue > 0 && currentPlayer === playerIdx) {
+                  setSelectedPiece({ playerIdx, pieceIdx });
+                }
+              }}
+            />
+          );
+        }
+      });
+    });
 
-  const getPiecePositionStyle = (position: number) => {
-    if (position === -1) return {}; // Home position handled separately
-    if (position > BOARD_POSITIONS) {
-      // Home stretch - show in center
-      return { bottom: `${20 + (position - BOARD_POSITIONS) * 25}px` };
-    }
-    const boardPos = getBoardPosition(position % BOARD_POSITIONS);
-    return {
-      left: `${boardPos.x}px`,
-      top: `${boardPos.y}px`
-    };
+    const isSafe = SAFE_POSITIONS.includes(position);
+    return (
+      <div
+        key={position}
+        className={`w-8 h-8 flex items-center justify-center border border-neutral-300 text-xs font-bold ${
+          isSafe ? 'bg-neutral-700' : 'bg-white'
+        } relative`}
+      >
+        {isSafe && <span className="text-yellow-400">X</span>}
+        <div className="absolute flex flex-wrap gap-0.5">
+          {piecesAtPosition}
+        </div>
+      </div>
+    );
   };
 
   return (
     <main className="min-h-screen bg-neutral-950 text-neutral-50">
+      {/* Navigation */}
+      <nav className="border-b border-neutral-800 bg-neutral-950/50 backdrop-blur-md">
+        <div className="max-w-7xl mx-auto px-4 py-4">
+          <Link href="/" className="text-blue-400 hover:text-blue-300 flex items-center gap-2">
+            Back to GameHub
+          </Link>
+        </div>
+      </nav>
+
       <div className="max-w-7xl mx-auto px-4 py-8">
-        <Link href="/" className="mb-8 inline-block px-4 py-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 transition-colors">
-          Back to Home
-        </Link>
-
-        <h1 className="text-5xl font-bold mb-2 text-center">Ludo Game</h1>
-        <p className="text-center text-neutral-400 mb-8">Race your 4 pieces around the board to win</p>
-
-        {gameWinner && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <div className="bg-neutral-900 border-2 border-green-500 rounded-xl p-8 max-w-md w-full text-center space-y-6">
-              <h2 className="text-4xl font-bold text-green-400">Game Over</h2>
-              <p className="text-2xl text-white font-semibold">{gameWinner} Player Wins</p>
-              <div className="space-y-3">
-                <button
-                  onClick={resetGame}
-                  className="w-full px-6 py-3 rounded-lg font-bold bg-green-600 hover:bg-green-700 text-white transition-all"
-                >
-                  Play Again
-                </button>
-                <Link href="/">
-                  <button className="w-full px-6 py-3 rounded-lg font-bold bg-blue-600 hover:bg-blue-700 text-white transition-all">
-                    Back to Home
-                  </button>
-                </Link>
-              </div>
-            </div>
-          </div>
-        )}
+        <h1 className="text-4xl font-bold mb-8">Ludo Game</h1>
 
         {gameMode === 'setup' ? (
           <div className="card-game max-w-md mx-auto space-y-6">
-            <h2 className="text-2xl font-bold">Game Setup</h2>
-            <p className="text-neutral-400">4 Players: Red, Blue, Green, Yellow</p>
-            <p className="text-neutral-400">Move all 4 pieces around the board to reach the finish</p>
-            <p className="text-sm text-neutral-500">Roll a 6 to send a piece from home. First to finish all pieces wins!</p>
+            <h2 className="text-2xl font-bold">Ready to Play?</h2>
+            <p className="text-neutral-400">4-Player Ludo Game</p>
+            <p className="text-sm text-neutral-500">Roll the dice, move your pieces around the board, and be the first to get all pieces home!</p>
             <button
               onClick={startGame}
-              className="w-full px-6 py-3 rounded-lg font-bold bg-blue-600 hover:bg-blue-700 text-white transition-all"
+              className="w-full px-6 py-3 rounded-lg font-bold bg-blue-600 hover:bg-blue-700 text-white transition-all duration-300 hover:scale-105 active:scale-95"
             >
               Start Game
             </button>
@@ -189,83 +260,51 @@ export default function LudoPage() {
           <div className="space-y-8">
             {/* Main Board */}
             <div className="card-game">
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                {/* Ludo Board */}
-                <div className="lg:col-span-2 space-y-4">
-                  <h3 className="text-xl font-bold">Game Board</h3>
-                  <div className="bg-neutral-800 rounded-lg p-8 relative min-h-96">
-                    {/* Board squares background */}
-                    <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(13, 1fr)' }}>
-                      {Array(52).fill(0).map((_, idx) => (
+              <div className="grid grid-cols-4 gap-8 mb-8">
+                {/* Player Status */}
+                {PLAYERS_CONFIG.map((config, idx) => (
+                  <div
+                    key={idx}
+                    className={`p-4 rounded-lg border-2 ${
+                      currentPlayer === idx ? `${config.accentColor} border-2 ring-2 ring-yellow-300` : 'border-neutral-700'
+                    }`}
+                  >
+                    <h3 className="font-bold mb-2">{config.name}</h3>
+                    <div className="grid grid-cols-2 gap-2">
+                      {players[idx].pieces.map((piece, pieceIdx) => (
                         <div
-                          key={idx}
-                          className="w-8 h-8 rounded border border-neutral-700 bg-neutral-700/50 flex items-center justify-center text-xs text-neutral-600"
+                          key={pieceIdx}
+                          className={`p-2 rounded text-xs text-center font-bold ${config.bgColor}`}
                         >
-                          {idx + 1}
+                          {piece.position === -1 ? 'H' : piece.position >= 58 ? 'W' : piece.position}
                         </div>
                       ))}
                     </div>
-
-                    {/* Pieces on board */}
-                    {players.map((player, playerIdx) =>
-                      player.pieces.map((piece, pieceIdx) => (
-                        piece.position >= 0 && (
-                          <div
-                            key={`${playerIdx}-${pieceIdx}`}
-                            className={`absolute w-6 h-6 rounded-full ${player.colorCode} border-2 border-white shadow-lg flex items-center justify-center text-xs font-bold text-white cursor-pointer hover:scale-110 transition-transform`}
-                            style={{
-                              ...getPiecePositionStyle(piece.position),
-                              transform: `translate(-50%, -50%)`
-                            }}
-                          >
-                            {pieceIdx + 1}
-                          </div>
-                        )
-                      ))
-                    )}
                   </div>
-                </div>
+                ))}
+              </div>
 
-                {/* Right Sidebar - Home Positions */}
-                <div className="space-y-6">
-                  <div>
-                    <h3 className="text-lg font-bold mb-4">Home Positions</h3>
-                    {players.map((player, playerIdx) => (
-                      <div key={playerIdx} className="mb-6 p-4 rounded-lg bg-neutral-800">
-                        <h4 className={`font-bold mb-3 ${player.textColor}`}>{player.name}</h4>
-                        <div className="grid grid-cols-2 gap-2">
-                          {player.pieces.map((piece, pieceIdx) => (
-                            <div
-                              key={pieceIdx}
-                              className={`p-2 rounded text-center font-bold text-white ${
-                                piece.position === -1
-                                  ? `${player.colorCode} border-2 border-white`
-                                  : 'bg-neutral-700 opacity-50'
-                              }`}
-                            >
-                              P{pieceIdx + 1}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Current Player Status */}
-                  <div className="p-4 rounded-lg bg-blue-900/30 border border-blue-700">
-                    <p className="text-sm text-neutral-400 mb-2">Current Turn</p>
-                    <p className="text-2xl font-bold text-blue-400">{players[currentPlayer].name}</p>
+              {/* Ludo Board Visual */}
+              <div className="bg-neutral-800 p-8 rounded-lg overflow-x-auto">
+                <div className="inline-block">
+                  <div className="grid gap-0" style={{ gridTemplateColumns: 'repeat(13, minmax(32px, 1fr))' }}>
+                    {/* Top row */}
+                    {Array.from({ length: 52 }, (_, i) => renderBoardSquare(i))}
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Dice and Controls */}
-            <div className="card-game max-w-md mx-auto space-y-6 text-center">
+            {/* Controls */}
+            <div className="card-game max-w-md mx-auto space-y-6">
+              <div className="text-center">
+                <h3 className="text-xl font-bold mb-2">{PLAYERS_CONFIG[currentPlayer].name}'s Turn</h3>
+              </div>
+
               <div className="flex justify-center">
-                <div className={`w-32 h-32 flex items-center justify-center text-6xl font-bold rounded-xl border-4 transition-all ${
-                  diceValue
-                    ? `${players[currentPlayer].colorCode} border-blue-400 text-white`
+                <div className={`w-24 h-24 flex items-center justify-center text-5xl font-bold rounded-lg border-4 ${
+                  diceValue > 0 
+                    ? `${PLAYERS_CONFIG[currentPlayer].bgColor} text-white border-yellow-400`
                     : 'bg-neutral-800 border-neutral-600 text-neutral-600'
                 }`}>
                   {diceValue || '-'}
@@ -274,22 +313,38 @@ export default function LudoPage() {
 
               <button
                 onClick={rollDice}
-                className="w-full px-6 py-4 rounded-lg font-bold bg-green-600 hover:bg-green-700 text-white transition-all text-lg"
+                disabled={gameMode === 'finished' || diceValue > 0}
+                className="w-full px-6 py-4 rounded-lg font-bold bg-green-600 hover:bg-green-700 text-white transition-all duration-300 hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Roll Dice
               </button>
 
-              <div className="grid grid-cols-4 gap-2 text-xs">
-                {players.map((player, idx) => {
-                  const finishedCount = player.pieces.filter(p => p.finished).length;
-                  return (
-                    <div key={idx} className="p-2 rounded bg-neutral-800">
-                      <div className={`font-bold ${player.textColor}`}>{player.name}</div>
-                      <div className="text-neutral-400">{finishedCount}/4 done</div>
-                    </div>
-                  );
-                })}
-              </div>
+              {/* Game Log */}
+              {gameLog.length > 0 && (
+                <div className="border-t border-neutral-700 pt-4">
+                  <h4 className="text-sm font-semibold mb-2 text-neutral-400">Recent Actions</h4>
+                  <div className="bg-neutral-800/50 rounded p-3 max-h-32 overflow-y-auto text-xs text-neutral-300 space-y-1">
+                    {gameLog.slice(-5).reverse().map((log, idx) => (
+                      <div key={idx}>{log}</div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {gameMode === 'finished' && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center">
+            <div className="card-game max-w-md w-full mx-4 text-center space-y-6">
+              <h2 className="text-3xl font-bold">Game Over!</h2>
+              <p className="text-xl text-green-400">{gameWinner} wins!</p>
+              <button
+                onClick={resetGame}
+                className="w-full px-6 py-3 rounded-lg font-bold bg-blue-600 hover:bg-blue-700 text-white transition-all duration-300 hover:scale-105 active:scale-95"
+              >
+                Play Again
+              </button>
             </div>
           </div>
         )}

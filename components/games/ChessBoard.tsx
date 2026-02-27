@@ -6,6 +6,7 @@ interface ChessBoardProps {
   selectedSquare: number | null;
   onSquareSelect: (square: number | null) => void;
   onGameEnd?: (winner: 'white' | 'black' | 'draw') => void;
+  gameType?: 'pvp' | 'ai';
 }
 
 type Piece = {
@@ -97,7 +98,53 @@ const isLightSquare = (index: number): boolean => {
   return (row + col) % 2 === 0;
 };
 
-export default function ChessBoard({ selectedSquare, onSquareSelect, onGameEnd }: ChessBoardProps) {
+// AI move selection using simple strategy
+const getAIMove = (board: Board, validMovesMap: Map<number, number[]>): { from: number; to: number } | null => {
+  const blackPieces: number[] = [];
+  
+  // Find all black pieces
+  board.forEach((piece, index) => {
+    if (piece && piece.color === 'black') {
+      blackPieces.push(index);
+    }
+  });
+
+  if (blackPieces.length === 0) return null;
+
+  // Shuffle and try pieces - prioritize captures
+  let bestMove = null;
+  let bestScore = -1;
+
+  blackPieces.forEach(fromIndex => {
+    const moves = validMovesMap.get(fromIndex) || [];
+    
+    moves.forEach(toIndex => {
+      let score = Math.random() * 10; // Base randomness
+      
+      // Prioritize capturing pieces
+      if (board[toIndex]) {
+        const capturedPiece = board[toIndex];
+        if (capturedPiece.type === 'queen') score += 100;
+        else if (capturedPiece.type === 'rook') score += 50;
+        else if (capturedPiece.type === 'bishop' || capturedPiece.type === 'knight') score += 30;
+        else if (capturedPiece.type === 'pawn') score += 10;
+      }
+      
+      // Prefer center control
+      const distance = Math.abs(toIndex % 8 - 3.5) + Math.abs(Math.floor(toIndex / 8) - 3.5);
+      score -= distance;
+      
+      if (score > bestScore) {
+        bestScore = score;
+        bestMove = { from: fromIndex, to: toIndex };
+      }
+    });
+  });
+
+  return bestMove;
+};
+
+export default function ChessBoard({ selectedSquare, onSquareSelect, onGameEnd, gameType = 'pvp' }: ChessBoardProps) {
   const [board, setBoard] = useState<Board>(INITIAL_BOARD);
   const [isWhiteTurn, setIsWhiteTurn] = useState(true);
   const [validMoves, setValidMoves] = useState<number[]>([]);
@@ -138,6 +185,42 @@ export default function ChessBoard({ selectedSquare, onSquareSelect, onGameEnd }
 
     return () => clearInterval(interval);
   }, [isWhiteTurn, gameOver, onGameEnd]);
+
+  // AI move effect - Computer plays automatically
+  useEffect(() => {
+    if (gameOver || gameType !== 'ai' || isWhiteTurn) return;
+
+    const timer = setTimeout(() => {
+      // Build valid moves map for all black pieces
+      const validMovesMap = new Map<number, number[]>();
+      board.forEach((piece, index) => {
+        if (piece && piece.color === 'black') {
+          validMovesMap.set(index, getValidMoves(index, piece));
+        }
+      });
+
+      const aiMove = getAIMove(board, validMovesMap);
+      if (aiMove) {
+        const capturedPiece = board[aiMove.to];
+        const newBoard = board.map((p, i) => 
+          i === aiMove.to ? board[aiMove.from] : i === aiMove.from ? null : p
+        );
+
+        if (capturedPiece) {
+          if (capturedPiece.color === 'white') {
+            setCapturedWhite([...capturedWhite, capturedPiece]);
+          } else {
+            setCapturedBlack([...capturedBlack, capturedPiece]);
+          }
+        }
+
+        setBoard(newBoard);
+        setIsWhiteTurn(true);
+      }
+    }, 1500); // Delay for realistic AI thinking time
+
+    return () => clearTimeout(timer);
+  }, [isWhiteTurn, board, gameOver, gameType, capturedBlack, capturedWhite]);
 
   const getValidMoves = (index: number, piece: Piece): number[] => {
     if (!piece) return [];

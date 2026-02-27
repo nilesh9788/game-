@@ -150,6 +150,7 @@ export default function ChessPage() {
                   selectedSquare={selectedSquare}
                   onSquareSelect={setSelectedSquare}
                   onGameEnd={handleGameEnd}
+                  gameType={gameType || 'pvp'}
                 />
             </div>
 
