@@ -55,20 +55,20 @@ const getPieceIcon = (piece: Piece): string => {
   if (!piece) return '';
   const iconMap: Record<string, Record<string, string>> = {
     white: {
-      pawn: 'P',
-      rook: 'R',
-      knight: 'N',
-      bishop: 'B',
-      queen: 'Q',
-      king: 'K',
+      pawn: '♙',
+      rook: '♖',
+      knight: '♘',
+      bishop: '♗',
+      queen: '♕',
+      king: '♔',
     },
     black: {
-      pawn: 'P',
-      rook: 'R',
-      knight: 'N',
-      bishop: 'B',
-      queen: 'Q',
-      king: 'K',
+      pawn: '♟',
+      rook: '♜',
+      knight: '♞',
+      bishop: '♝',
+      queen: '♛',
+      king: '♚',
     },
   };
   return iconMap[piece.color][piece.type];
@@ -76,7 +76,7 @@ const getPieceIcon = (piece: Piece): string => {
 
 const getPieceColor = (piece: Piece): string => {
   if (!piece) return '';
-  return piece.color === 'white' ? 'text-white' : 'text-gray-900';
+  return piece.color === 'white' ? 'text-white drop-shadow-lg' : 'text-white drop-shadow-lg';
 };
 
 const isLightSquare = (index: number): boolean => {
@@ -325,10 +325,10 @@ export default function ChessBoard({ selectedSquare, onSquareSelect, onGameEnd }
                 key={index}
                 onClick={() => handleSquareClick(index)}
                 disabled={gameOver}
-                className={`w-16 h-16 flex items-center justify-center text-2xl font-bold transition-all border border-neutral-600 ${
+                className={`w-16 h-16 flex items-center justify-center text-3xl font-bold transition-all border border-neutral-600 ${
                   isLightSquare(index)
-                    ? 'bg-yellow-100 hover:bg-yellow-200 text-neutral-900'
-                    : 'bg-amber-700 hover:bg-amber-800 text-white'
+                    ? 'bg-yellow-100 hover:bg-yellow-200'
+                    : 'bg-amber-700 hover:bg-amber-800'
                 } ${selectedSquare === index ? 'ring-2 ring-inset ring-blue-400' : ''} ${
                   validMoves.includes(index)
                     ? 'ring-2 ring-inset ring-green-400'
@@ -357,7 +357,7 @@ export default function ChessBoard({ selectedSquare, onSquareSelect, onGameEnd }
               <span className="text-xs text-neutral-500">None</span>
             ) : (
               capturedWhite.map((piece, idx) => (
-                <span key={idx} className="text-lg font-bold bg-neutral-800 px-2 py-1 rounded text-neutral-900">
+                <span key={idx} className="text-2xl font-bold bg-neutral-800 px-2 py-1 rounded text-white drop-shadow-lg">
                   {getPieceIcon(piece)}
                 </span>
               ))
@@ -371,7 +371,7 @@ export default function ChessBoard({ selectedSquare, onSquareSelect, onGameEnd }
               <span className="text-xs text-neutral-500">None</span>
             ) : (
               capturedBlack.map((piece, idx) => (
-                <span key={idx} className="text-lg font-bold bg-neutral-800 px-2 py-1 rounded text-white">
+                <span key={idx} className="text-2xl font-bold bg-neutral-800 px-2 py-1 rounded text-white drop-shadow-lg">
                   {getPieceIcon(piece)}
                 </span>
               ))

@@ -55,11 +55,11 @@ export default function Home() {
     {
       id: 'math',
       title: 'Math Challenge',
-      description: 'Test your math skills with quick calculations',
-      icon: 'M',
+      description: 'Answer math questions quickly and earn points',
+      icon: '🧮',
       color: 'from-red-500 to-pink-600',
       featured: false,
-      soon: true,
+      soon: false,
     },
   ];
 
